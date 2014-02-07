@@ -68,7 +68,7 @@ module CarrierWave
     end
 
     def _is_video?
-      file.content_type =~ /video/
+      file.content_type =~ /video/ || file.content_type =~ /mp4/
     end
 
     def _video
