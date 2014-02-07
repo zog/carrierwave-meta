@@ -22,6 +22,10 @@ module CarrierWave
       model_delegate_attribute :width, 0
       model_delegate_attribute :height, 0
       model_delegate_attribute :md5sum, ''
+      model_delegate_attribute :duration, ''
+      model_delegate_attribute :video_codec, ''
+      model_delegate_attribute :bitrate, ''
+      model_delegate_attribute :audio_codec, ''
     end
 
     def store_meta(options = {})
@@ -35,6 +39,13 @@ module CarrierWave
         self.height = height
         if options[:md5sum]
           self.md5sum = Digest::MD5.hexdigest(File.read(self.file.path))
+        end
+        v = _video
+        if v
+          self.duration     = v.duration
+          self.video_codec  = v.video_codec
+          self.bitrate      = v.bitrate
+          self.audio_codec  = v.audio_codec
         end
       end
     end
@@ -56,32 +67,47 @@ module CarrierWave
       end
     end
 
+    def _is_video?
+      file.content_type =~ /video/
+    end
+
+    def _video
+      _is_video? && defined?(::FFMPEG::Movie) && ::FFMPEG::Movie.new(file.file)
+    end
+
     def get_dimensions
       [].tap do |size|
-        is_image = file.content_type =~ /image/
-        is_pdf =
-          file.content_type =~ /postscript|pdf/ &&
-          CarrierWave::Meta.ghostscript_enabled
+        v = _video
+        if v
+          res = v.resolution.split("x").map(&:to_i)
+          size << res.first
+          size << res.last
+        else
+          is_image = file.content_type =~ /image/
+          is_pdf =
+            file.content_type =~ /postscript|pdf/ &&
+            CarrierWave::Meta.ghostscript_enabled
 
-        is_dimensionable = is_image || is_pdf
+          is_dimensionable = is_image || is_pdf || _is_video?
 
-        manipulate! do |img|
-          if processor?(:rmagick, img) && is_dimensionable
-            size << img.columns
-            size << img.rows
-          elsif processor?(:mini_magick, img) && is_dimensionable
-            size << img['width']
-            size << img['height']
-          elsif processor?(:socrecy, img) && is_image
-            size << img.dimensions[:x].to_i
-            size << img.dimensions[:y].to_i
-          elsif processor?(:vips, img) && is_image
-            size << img.x_size
-            size << img.y_size
-          else
-            raise "Unsupported file type/image processor (use RMagick, MiniMagick, ImageSorcery, VIPS)"
+          manipulate! do |img|
+            if processor?(:rmagick, img) && is_dimensionable
+              size << img.columns
+              size << img.rows
+            elsif processor?(:mini_magick, img) && is_dimensionable
+              size << img['width']
+              size << img['height']
+            elsif processor?(:socrecy, img) && is_image
+              size << img.dimensions[:x].to_i
+              size << img.dimensions[:y].to_i
+            elsif processor?(:vips, img) && is_image
+              size << img.x_size
+              size << img.y_size
+            else
+              raise "Unsupported file type/image processor (use RMagick, MiniMagick, ImageSorcery, VIPS): #{img.class}"
+            end
+            img
           end
-          img
         end
       end
     rescue CarrierWave::ProcessingError
